@@ -24,8 +24,12 @@ abstract class BaseSetup implements InstallerInterface {
     }
     
     public function info(){
-        return $this -> appInfo;
+        if (isset($this->appInfo['langs']) && $this->appInfo['langs']['active']==true) {
+		$this->addHestiaLanguages();
+	}
+	return $this -> appInfo;
     }
+
     public function __construct($domain, HestiaApp $appcontext)
     {
         if(filter_var($domain, FILTER_VALIDATE_DOMAIN) === false) {
@@ -34,6 +38,22 @@ abstract class BaseSetup implements InstallerInterface {
 
         $this->domain = $domain;
         $this->appcontext = $appcontext;
+    }
+
+    public function addHestiaLanguages() {
+	$this->appcontext->runUser('v-list-sys-languages json','', $output);
+	$language = json_decode(implode('', $output->raw), true);
+	foreach ($language as $lang) {
+		if (!array_key_exists($lang, $this->appInfo['langs']['iso_code'])) {
+    			continue;
+		}
+    		$languages[$lang] = $lang.':'.translate_json($lang);
+	}
+	$select_lang = array_key_exists($_SESSION['language'], $this->appInfo['langs']['iso_code'])?$languages[$_SESSION['language']]:$languages[$this->appInfo['langs']['default']];
+	asort($languages);
+	unset($output);
+	$form_lang['language'] = array('type'=>'select', 'value'=>$select_lang, 'options'=>$languages);
+	$this->config['form'] = array_merge($this->config['form'],$form_lang);
     }
 
     public function getConfig($section=null)
@@ -65,7 +85,8 @@ abstract class BaseSetup implements InstallerInterface {
         $directory = Util::join_paths($domain_path, "public_html", $subDir);
 
         if (!file_exists($directory)) {
-                mkdir($directory, 0755, true);
+                //mkdir($directory, 0755, true);
+		$this->appcontext->runUser('v-add-fs-directory', $directory);
         }
 
         return Util::join_paths($directory, $append_relative_path);
@@ -84,8 +105,13 @@ abstract class BaseSetup implements InstallerInterface {
             if ($res_type === 'composer') {
                 new ComposerResource($this->appcontext, $res_data, $resource_destination);
             } else {
-                $this->appcontext->archiveExtract($res_data['src'], $resource_destination, 1); 
-            }
+		if(isset($options['language'])) {
+			$this->appcontext->archiveExtract($this->info()['langs']['iso_code'][$options['language']], $resource_destination, 1);
+		}
+		else {
+			$this->appcontext->archiveExtract($res_data['src'], $resource_destination, 1);
+            	}
+	    }
         }
         return true;
     }
